@@ -1,0 +1,814 @@
+import React, { useState, useEffect } from 'react';
+import { Calendar, Clock, Target, Plus, Save, Filter, DollarSign, Edit2, Trash2, Download, Upload, ChevronDown, ChevronUp } from 'lucide-react';
+
+/*
+ * Billable Hours Tracker
+ * Copyright (c) 2025 Mark Foti. All rights reserved.
+ * 
+ * This software is the exclusive property of Mark Foti. No part of this 
+ * software may be reproduced, distributed, or transmitted in any form or 
+ * by any means, including photocopying, recording, or other electronic or 
+ * mechanical methods, without the prior written permission of the owner,
+ * except in the case of brief quotations embodied in critical reviews and 
+ * certain other noncommercial uses permitted by copyright law.
+ * 
+ * For permission requests, contact Mark Foti at mark@fotilaw.com.
+ */
+
+const BillableHoursTracker = () => {
+  const VALID_PASSWORD = "FotiLaw2025!";
+  
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [entries, setEntries] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [noteTemplates, setNoteTemplates] = useState([]);
+  const [dailyGoal, setDailyGoal] = useState(8);
+  const [dailyTasks, setDailyTasks] = useState([]);
+  const [showTaskPlanner, setShowTaskPlanner] = useState(false);
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [currentEntry, setCurrentEntry] = useState({
+    client: '',
+    hours: '',
+    minutes: '',
+    increment: 0.1,
+    rate: '',
+    notes: '',
+    date: new Date().toISOString().split('T')[0]
+  });
+  const [newTask, setNewTask] = useState({
+    client: '',
+    description: '',
+    estimatedTime: ''
+  });
+  const [view, setView] = useState('day');
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [lastBackup, setLastBackup] = useState(null);
+  const [showSyncHelper, setShowSyncHelper] = useState(false);
+
+  // Load authentication status
+  useEffect(() => {
+    const savedAuth = localStorage.getItem('billableAuth');
+    if (savedAuth === 'authenticated') {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  // Load app data when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      const savedEntries = localStorage.getItem('billableEntries');
+      const savedClients = localStorage.getItem('billableClients');
+      const savedTemplates = localStorage.getItem('noteTemplates');
+      const savedGoal = localStorage.getItem('dailyGoal');
+      const savedTasks = localStorage.getItem('dailyTasks');
+      const savedLastBackup = localStorage.getItem('lastBackupDate');
+      
+      if (savedEntries) setEntries(JSON.parse(savedEntries));
+      if (savedClients) setClients(JSON.parse(savedClients));
+      if (savedTemplates) setNoteTemplates(JSON.parse(savedTemplates));
+      if (savedGoal) setDailyGoal(parseFloat(savedGoal));
+      if (savedTasks) setDailyTasks(JSON.parse(savedTasks));
+      if (savedLastBackup) setLastBackup(savedLastBackup);
+    }
+  }, [isAuthenticated]);
+
+  // Save data
+  useEffect(() => {
+    if (isAuthenticated) localStorage.setItem('billableEntries', JSON.stringify(entries));
+  }, [entries, isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated) localStorage.setItem('billableClients', JSON.stringify(clients));
+  }, [clients, isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated) localStorage.setItem('noteTemplates', JSON.stringify(noteTemplates));
+  }, [noteTemplates, isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated) localStorage.setItem('dailyGoal', dailyGoal.toString());
+  }, [dailyGoal, isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated) localStorage.setItem('dailyTasks', JSON.stringify(dailyTasks));
+  }, [dailyTasks, isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated && lastBackup) localStorage.setItem('lastBackupDate', lastBackup);
+  }, [lastBackup, isAuthenticated]);
+
+  const handleLogin = () => {
+    if (passwordInput === VALID_PASSWORD) {
+      setIsAuthenticated(true);
+      localStorage.setItem('billableAuth', 'authenticated');
+      setPasswordInput('');
+    } else {
+      alert('Incorrect password. Please try again.');
+      setPasswordInput('');
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    localStorage.removeItem('billableAuth');
+  };
+
+  const roundTime = (totalMinutes, increment) => {
+    const incrementMinutes = increment === 0.1 ? 6 : 15;
+    return Math.ceil(totalMinutes / incrementMinutes) * incrementMinutes;
+  };
+
+  const addEntry = () => {
+    if (!currentEntry.client || (!currentEntry.hours && !currentEntry.minutes)) return;
+    
+    const totalMinutes = (parseInt(currentEntry.hours) || 0) * 60 + (parseInt(currentEntry.minutes) || 0);
+    const roundedMinutes = roundTime(totalMinutes, currentEntry.increment);
+    const billableHours = roundedMinutes / 60;
+    
+    if (editingEntry) {
+      const updatedEntry = {
+        ...editingEntry,
+        client: currentEntry.client,
+        originalTime: totalMinutes,
+        roundedTime: roundedMinutes,
+        billableHours: billableHours,
+        increment: currentEntry.increment,
+        rate: parseFloat(currentEntry.rate) || 0,
+        notes: currentEntry.notes,
+        date: currentEntry.date
+      };
+      
+      setEntries(entries.map(entry => entry.id === editingEntry.id ? updatedEntry : entry));
+      setEditingEntry(null);
+    } else {
+      const newEntry = {
+        id: Date.now(),
+        client: currentEntry.client,
+        originalTime: totalMinutes,
+        roundedTime: roundedMinutes,
+        billableHours: billableHours,
+        increment: currentEntry.increment,
+        rate: parseFloat(currentEntry.rate) || 0,
+        notes: currentEntry.notes,
+        date: currentEntry.date,
+        timestamp: new Date().toISOString()
+      };
+
+      setEntries([...entries, newEntry]);
+    }
+    
+    if (!clients.includes(currentEntry.client)) {
+      setClients([...clients, currentEntry.client]);
+    }
+
+    setCurrentEntry({
+      client: '',
+      hours: '',
+      minutes: '',
+      increment: 0.1,
+      rate: currentEntry.rate,
+      notes: '',
+      date: new Date().toISOString().split('T')[0]
+    });
+  };
+
+  const editEntry = (entry) => {
+    setEditingEntry(entry);
+    setCurrentEntry({
+      client: entry.client,
+      hours: Math.floor(entry.originalTime / 60).toString(),
+      minutes: (entry.originalTime % 60).toString(),
+      increment: entry.increment,
+      rate: entry.rate.toString(),
+      notes: entry.notes,
+      date: entry.date
+    });
+  };
+
+  const deleteEntry = (entryId) => {
+    if (window.confirm('Are you sure you want to delete this entry?')) {
+      setEntries(entries.filter(entry => entry.id !== entryId));
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingEntry(null);
+    setCurrentEntry({
+      client: '',
+      hours: '',
+      minutes: '',
+      increment: 0.1,
+      rate: '',
+      notes: '',
+      date: new Date().toISOString().split('T')[0]
+    });
+  };
+
+  const addTask = () => {
+    if (!newTask.client || !newTask.description) return;
+    
+    const task = {
+      id: Date.now(),
+      client: newTask.client,
+      description: newTask.description,
+      estimatedTime: parseFloat(newTask.estimatedTime) || 0,
+      completed: false,
+      date: new Date().toISOString().split('T')[0]
+    };
+    
+    setDailyTasks([...dailyTasks, task]);
+    setNewTask({ client: '', description: '', estimatedTime: '' });
+  };
+
+  const toggleTaskCompletion = (taskId) => {
+    const task = dailyTasks.find(t => t.id === taskId);
+    
+    if (task && !task.completed) {
+      const estimatedHours = Math.floor(task.estimatedTime);
+      const estimatedMinutes = Math.round((task.estimatedTime - estimatedHours) * 60);
+      
+      setCurrentEntry({
+        ...currentEntry,
+        client: task.client,
+        hours: estimatedHours.toString(),
+        minutes: estimatedMinutes.toString(),
+        notes: task.description,
+        date: new Date().toISOString().split('T')[0]
+      });
+    }
+    
+    setDailyTasks(dailyTasks.map(task => 
+      task.id === taskId ? { ...task, completed: !task.completed } : task
+    ));
+  };
+
+  const deleteTask = (taskId) => {
+    setDailyTasks(dailyTasks.filter(task => task.id !== taskId));
+  };
+
+  const saveNoteTemplate = () => {
+    if (currentEntry.notes && !noteTemplates.includes(currentEntry.notes)) {
+      setNoteTemplates([...noteTemplates, currentEntry.notes]);
+    }
+  };
+
+  const getTodaysTasks = () => {
+    const today = new Date().toISOString().split('T')[0];
+    return dailyTasks.filter(task => task.date === today);
+  };
+
+  const getTodaysEntries = () => {
+    const today = new Date().toISOString().split('T')[0];
+    return entries.filter(entry => entry.date === today);
+  };
+
+  const getTodaysTotal = () => {
+    return getTodaysEntries().reduce((total, entry) => total + entry.billableHours, 0);
+  };
+
+  const getCurrentDate = () => {
+    return new Date().toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+  };
+
+  const getFilteredEntries = () => {
+    if (view === 'day') {
+      return entries.filter(entry => entry.date === selectedDate);
+    } else if (view === 'week') {
+      const weekStart = new Date(selectedDate);
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      
+      return entries.filter(entry => {
+        const entryDate = new Date(entry.date);
+        return entryDate >= weekStart && entryDate <= weekEnd;
+      });
+    } else if (view === 'client') {
+      return entries.sort((a, b) => a.client.localeCompare(b.client));
+    }
+    return entries;
+  };
+
+  const formatTime = (minutes) => {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return `${hours}h ${mins}m`;
+  };
+
+  const exportData = () => {
+    const now = new Date();
+    const timestamp = now.toISOString().split('T')[0];
+    
+    const csvHeaders = ['Date', 'Client', 'Original Time (Minutes)', 'Billable Hours', 'Increment', 'Rate', 'Amount', 'Notes'];
+    const csvRows = getFilteredEntries().map(entry => [
+      entry.date,
+      `"${entry.client}"`,
+      entry.originalTime,
+      entry.billableHours.toFixed(2),
+      entry.increment,
+      entry.rate.toFixed(2),
+      (entry.billableHours * entry.rate).toFixed(2),
+      `"${entry.notes || ''}"`
+    ]);
+    
+    const csvContent = [csvHeaders.join(','), ...csvRows.map(row => row.join(','))].join('\n');
+    
+    // Create a text area with the CSV content for easy copying
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.8);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    `;
+    
+    const content = document.createElement('div');
+    content.style.cssText = `
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      max-width: 90%;
+      max-height: 90%;
+      overflow: auto;
+    `;
+    
+    content.innerHTML = `
+      <h3 style="margin-top: 0; color: #1f2937;">Export CSV Data</h3>
+      <p style="color: #6b7280; margin-bottom: 15px;">Copy the text below and save it as a .csv file:</p>
+      <textarea readonly style="
+        width: 100%;
+        height: 300px;
+        font-family: monospace;
+        font-size: 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 4px;
+        padding: 10px;
+        resize: none;
+      ">${csvContent}</textarea>
+      <div style="margin-top: 15px; text-align: center;">
+        <button onclick="
+          navigator.clipboard.writeText(this.parentElement.previousElementSibling.value).then(() => {
+            alert('CSV data copied to clipboard!');
+          }).catch(() => {
+            this.parentElement.previousElementSibling.select();
+            document.execCommand('copy');
+            alert('CSV data selected. Press Ctrl+C to copy.');
+          });
+        " style="
+          background: #10b981;
+          color: white;
+          border: none;
+          padding: 8px 16px;
+          border-radius: 4px;
+          margin-right: 10px;
+          cursor: pointer;
+        ">Copy to Clipboard</button>
+        <button onclick="document.body.removeChild(this.closest('div[style*=fixed]'))" style="
+          background: #6b7280;
+          color: white;
+          border: none;
+          padding: 8px 16px;
+          border-radius: 4px;
+          cursor: pointer;
+        ">Close</button>
+      </div>
+      <p style="color: #6b7280; font-size: 12px; margin-top: 10px; margin-bottom: 0;">
+        Suggested filename: billable-hours-${timestamp}.csv
+      </p>
+    `;
+    
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+    
+    // Select all text for easy copying
+    const textarea = content.querySelector('textarea');
+    textarea.focus();
+    textarea.select();
+    
+    setLastBackup(now.toISOString());
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="bg-white rounded-lg shadow-lg p-8 w-full max-w-md">
+          <div className="text-center mb-6">
+            <Clock className="w-12 h-12 text-blue-600 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-800 mb-2">Billable Hours Tracker</h1>
+            <p className="text-gray-600">Please enter your password to access the application</p>
+          </div>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                placeholder="Enter password"
+                className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <button
+              onClick={handleLogin}
+              className="w-full px-4 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+            >
+              Access Application
+            </button>
+          </div>
+          
+          <div className="text-center mt-6 pt-4 border-t border-gray-200">
+            <p className="text-xs text-gray-500">© 2025 Mark Foti. All rights reserved.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const todaysTotal = getTodaysTotal();
+  const progressPercentage = Math.min((todaysTotal / dailyGoal) * 100, 100);
+
+  return (
+    <div className="max-w-6xl mx-auto p-6 bg-gray-50 min-h-screen">
+      <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <h1 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+          <Clock className="w-6 h-6" />
+          Billable Hours Tracker
+          <button
+            onClick={handleLogout}
+            className="ml-auto px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700"
+          >
+            Logout
+          </button>
+        </h1>
+
+        {/* Daily Goal & Progress */}
+        <div className="bg-blue-50 rounded-lg p-4 mb-6">
+          <div className="text-center mb-3">
+            <h2 className="text-lg font-semibold text-blue-800">{getCurrentDate()}</h2>
+            <p className="text-sm text-blue-600">Today's Progress</p>
+          </div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Target className="w-5 h-5 text-blue-600" />
+              <span className="font-medium text-blue-800">Daily Goal:</span>
+              <input
+                type="number"
+                value={dailyGoal}
+                onChange={(e) => setDailyGoal(parseFloat(e.target.value) || 0)}
+                className="w-16 px-2 py-1 border rounded text-center"
+                step="0.5"
+                min="0"
+              />
+              <span className="text-blue-800">hours</span>
+            </div>
+            <div className="text-blue-800 font-medium">
+              {todaysTotal.toFixed(1)} / {dailyGoal} hours
+            </div>
+          </div>
+          <div className="w-full bg-blue-200 rounded-full h-3">
+            <div 
+              className="bg-blue-600 h-3 rounded-full transition-all duration-300"
+              style={{ width: `${progressPercentage}%` }}
+            ></div>
+          </div>
+          <div className="text-sm text-blue-600 mt-1">
+            {progressPercentage.toFixed(1)}% of daily goal
+          </div>
+          
+          <div className="mt-4 pt-4 border-t border-blue-200">
+            <button
+              onClick={() => setShowTaskPlanner(!showTaskPlanner)}
+              className="flex items-center gap-2 text-blue-700 hover:text-blue-800 font-medium"
+            >
+              {showTaskPlanner ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              Daily Task Planner
+            </button>
+          </div>
+        </div>
+
+        {/* Task Planner */}
+        {showTaskPlanner && (
+          <div className="bg-green-50 rounded-lg p-4 mb-6">
+            <h3 className="font-medium text-green-800 mb-3">Today's Planned Tasks</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+              <input
+                type="text"
+                value={newTask.client}
+                onChange={(e) => setNewTask({...newTask, client: e.target.value})}
+                placeholder="Client name"
+                className="px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <input
+                type="text"
+                value={newTask.description}
+                onChange={(e) => setNewTask({...newTask, description: e.target.value})}
+                placeholder="Task description"
+                className="px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={newTask.estimatedTime}
+                  onChange={(e) => setNewTask({...newTask, estimatedTime: e.target.value})}
+                  placeholder="Est. hours"
+                  step="0.25"
+                  min="0"
+                  className="flex-1 px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+                <button
+                  onClick={addTask}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {getTodaysTasks().map(task => (
+                <div key={task.id} className={`flex items-center justify-between p-3 rounded-md border ${
+                  task.completed ? 'bg-green-100 border-green-300' : 'bg-white border-green-200'
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={task.completed}
+                      onChange={() => toggleTaskCompletion(task.id)}
+                      className="w-4 h-4"
+                    />
+                    <div className={task.completed ? 'line-through text-gray-500' : ''}>
+                      <span className="font-medium text-green-800">{task.client}</span>
+                      <span className="text-gray-600 ml-2">- {task.description}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-green-600">{task.estimatedTime}h</span>
+                    <button
+                      onClick={() => deleteTask(task.id)}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              
+              {getTodaysTasks().length === 0 && (
+                <p className="text-center text-green-600 py-4">No tasks planned for today</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Time Entry Form */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Client</label>
+            <input
+              type="text"
+              value={currentEntry.client}
+              onChange={(e) => setCurrentEntry({...currentEntry, client: e.target.value})}
+              placeholder="Client name"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Hours</label>
+              <input
+                type="number"
+                value={currentEntry.hours}
+                onChange={(e) => setCurrentEntry({...currentEntry, hours: e.target.value})}
+                placeholder="0"
+                min="0"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Minutes</label>
+              <input
+                type="number"
+                value={currentEntry.minutes}
+                onChange={(e) => setCurrentEntry({...currentEntry, minutes: e.target.value})}
+                placeholder="0"
+                min="0"
+                max="59"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Billing Increment</label>
+            <select
+              value={currentEntry.increment}
+              onChange={(e) => setCurrentEntry({...currentEntry, increment: parseFloat(e.target.value)})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value={0.1}>0.1 (6-minute)</option>
+              <option value={0.25}>0.25 (15-minute)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Hourly Rate ($)</label>
+            <input
+              type="number"
+              value={currentEntry.rate}
+              onChange={(e) => setCurrentEntry({...currentEntry, rate: e.target.value})}
+              placeholder="0.00"
+              min="0"
+              step="0.01"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+            <input
+              type="date"
+              value={currentEntry.date}
+              onChange={(e) => setCurrentEntry({...currentEntry, date: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+            <input
+              type="text"
+              value={currentEntry.notes}
+              onChange={(e) => setCurrentEntry({...currentEntry, notes: e.target.value})}
+              placeholder="Description of work"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={addEntry}
+            className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+          >
+            <Plus className="w-5 h-5" />
+            {editingEntry ? 'Update Entry' : 'Add Time Entry'}
+          </button>
+          
+          {editingEntry && (
+            <button
+              onClick={cancelEdit}
+              className="px-6 py-3 bg-gray-500 text-white rounded-md hover:bg-gray-600"
+            >
+              Cancel Edit
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* View Controls */}
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Filter className="w-5 h-5 text-gray-600" />
+              <span className="font-medium text-gray-700">View:</span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setView('day')}
+                className={`px-4 py-2 rounded-md ${
+                  view === 'day' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                Day
+              </button>
+              <button
+                onClick={() => setView('week')}
+                className={`px-4 py-2 rounded-md ${
+                  view === 'week' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                Week
+              </button>
+              <button
+                onClick={() => setView('client')}
+                className={`px-4 py-2 rounded-md ${
+                  view === 'client' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                Client
+              </button>
+            </div>
+            {(view === 'day' || view === 'week') && (
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md"
+              />
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          {getFilteredEntries().length === 0 ? (
+            <div className="text-center text-gray-500 py-8">
+              No entries found for the selected view.
+            </div>
+          ) : (
+            getFilteredEntries().map((entry) => (
+              <div key={entry.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <span className="font-medium text-blue-800">{entry.client}</span>
+                    <span className="text-sm text-gray-500">{entry.date}</span>
+                    <span className="text-sm text-gray-600">
+                      {formatTime(entry.originalTime)} → {formatTime(entry.roundedTime)}
+                    </span>
+                    <span className="font-medium text-green-600">
+                      {entry.billableHours.toFixed(2)}h
+                    </span>
+                    {entry.rate > 0 && (
+                      <span className="text-green-700 font-medium">
+                        ${(entry.billableHours * entry.rate).toFixed(2)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => editEntry(entry)}
+                      className="text-blue-600 hover:text-blue-800"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => deleteEntry(entry.id)}
+                      className="text-red-600 hover:text-red-800"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                {entry.notes && (
+                  <p className="text-gray-700 text-sm mt-2">{entry.notes}</p>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        {getFilteredEntries().length > 0 && (
+          <div className="mt-6 pt-4 border-t border-gray-200">
+            <div className="flex justify-between text-lg font-medium">
+              <span>Total Billable Hours:</span>
+              <span className="text-blue-600">
+                {getFilteredEntries().reduce((total, entry) => total + entry.billableHours, 0).toFixed(2)}h
+              </span>
+            </div>
+            <div className="flex justify-between text-lg font-medium mt-1">
+              <span>Total Amount:</span>
+              <span className="text-green-600">
+                ${getFilteredEntries().reduce((total, entry) => total + (entry.billableHours * entry.rate), 0).toFixed(2)}
+              </span>
+            </div>
+            
+            {/* Export Button - Moved here below entries */}
+            <div className="mt-4 pt-4 border-t border-gray-200 text-center">
+              <button
+                onClick={exportData}
+                className="px-3 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 transition-colors flex items-center gap-2 mx-auto"
+              >
+                <Download className="w-4 h-4" />
+                Export to CSV
+              </button>
+              <p className="text-xs text-gray-500 mt-2">Export current view to CSV file</p>
+            </div>
+          </div>
+        )}
+      </div>
+      
+      <div className="text-center py-4 text-xs text-gray-500">
+        © 2025 Mark Foti. All rights reserved. | Billable Hours Tracker v1.0
+      </div>
+    </div>
+  );
+};
+
+export default BillableHoursTracker;
